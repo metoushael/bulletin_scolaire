@@ -1,0 +1,113 @@
+name: Build et publication
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  APP_LABEL: Bulletin Scolaire
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Generer le dossier android
+        run: |
+          flutter create --org org.amani --project-name bulletin_scolaire --platforms=android .
+          git checkout -- lib pubspec.yaml || true
+          rm -rf test
+          sed -i "s/android:label=\"[^\"]*\"/android:label=\"$APP_LABEL\"/" android/app/src/main/AndroidManifest.xml
+      - run: flutter pub get
+      - run: flutter build apk --release
+      - run: cp build/app/outputs/flutter-apk/app-release.apk BulletinScolaire-android.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android
+          path: BulletinScolaire-android.apk
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Generer le dossier windows
+        shell: bash
+        run: |
+          flutter create --org org.amani --project-name bulletin_scolaire --platforms=windows .
+          git checkout -- lib pubspec.yaml || true
+          rm -rf test
+          sed -i "s/L\"bulletin_scolaire\"/L\"$APP_LABEL\"/" windows/runner/main.cpp
+      - run: flutter pub get
+      - run: flutter build windows --release
+      - name: Archive zip
+        shell: pwsh
+        run: Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath BulletinScolaire-windows.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: BulletinScolaire-windows.zip
+
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Generer le dossier web
+        run: |
+          flutter create --org org.amani --project-name bulletin_scolaire --platforms=web .
+          git checkout -- lib pubspec.yaml || true
+          rm -rf test
+          python3 - <<'PY'
+          p = 'web/index.html'
+          s = open(p, encoding='utf-8').read()
+          snippet = (
+              '<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.2.146/pdf.min.js"></script>'
+              '<script>pdfjsLib.GlobalWorkerOptions.workerSrc = '
+              '"https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.2.146/pdf.worker.min.js";'
+              'pdfRenderOptions = {cMapUrl: "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.2.146/cmaps/", cMapPacked: true};</script>'
+          )
+          s = s.replace('</head>', snippet + '</head>', 1)
+          s = s.replace('<title>bulletin_scolaire</title>', '<title>Bulletin Scolaire</title>')
+          open(p, 'w', encoding='utf-8').write(s)
+          PY
+      - run: flutter pub get
+      - run: flutter build web --release
+      - name: Archive zip
+        run: cd build/web && zip -r ../../BulletinScolaire-web.zip .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web
+          path: BulletinScolaire-web.zip
+
+  release:
+    needs: [android, windows, web]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
