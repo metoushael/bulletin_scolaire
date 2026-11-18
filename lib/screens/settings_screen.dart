@@ -250,7 +250,7 @@ Future<void> _restoreJson(BuildContext context, String json) async {
   } catch (e) {
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Sauvegarde invalide, rien n\'a été modifié.'),
+        content: Text("Sauvegarde invalide, rien n'a été modifié."),
         backgroundColor: Colors.red,
       ));
     }
@@ -265,19 +265,21 @@ Future<void> _restoreDialog(BuildContext context) async {
       title: const Text('Restaurer une sauvegarde'),
       content: SizedBox(
         width: 460,
-        child: Column(
-          mainAxisSize: .min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('Attention : les données actuelles seront remplacées.'),
-            const SizedBox(height: 10),
-            TextField(
-              controller: c,
-              maxLines: 8,
-              minLines: 4,
-              decoration: inputDeco('Collez la sauvegarde ici'),
-            ),
-          ],
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Attention : les données actuelles seront remplacées.'),
+              const SizedBox(height: 10),
+              TextField(
+                controller: c,
+                maxLines: 8,
+                minLines: 4,
+                decoration: inputDeco('Collez la sauvegarde ici'),
+              ),
+            ],
+          ),
         ),
       ),
       actions: [
@@ -296,25 +298,28 @@ Future<void> _restoreDialog(BuildContext context) async {
 
 Future<void> _courseDialog(BuildContext context, {Course? course}) async {
   final name = TextEditingController(text: course?.name ?? '');
-  final max = TextEditingController(text: '${course?.max ?? 20}');
+  final maxText = '${course?.max ?? 20}';
+  final maxCtrl = TextEditingController(text: maxText);
   final ok = await showDialog<bool>(
     context: context,
     builder: (ctx) => AlertDialog(
       title: Text(course == null ? 'Nouveau cours' : 'Modifier le cours'),
       content: SizedBox(
         width: 380,
-        child: Column(
-          mainAxisSize: .min,
-          children: [
-            TextField(controller: name, decoration: inputDeco('Intitulé du cours')),
-            const SizedBox(height: 10),
-            TextField(
-              controller: max,
-              keyboardType: TextInputType.number,
-              decoration:
-                  inputDeco('Maxima par période', hint: '10, 20, 40, 50...'),
-            ),
-          ],
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(controller: name, decoration: inputDeco('Intitulé du cours')),
+              const SizedBox(height: 10),
+              TextField(
+                controller: maxCtrl,
+                keyboardType: TextInputType.number,
+                decoration:
+                    inputDeco('Maxima par période', hint: '10, 20, 40, 50...'),
+              ),
+            ],
+          ),
         ),
       ),
       actions: [
@@ -327,7 +332,7 @@ Future<void> _courseDialog(BuildContext context, {Course? course}) async {
       ],
     ),
   );
-  final m = int.tryParse(max.text.trim());
+  final m = int.tryParse(maxCtrl.text.trim());
   if (ok != true || name.text.trim().isEmpty || m == null || m <= 0) return;
   if (course == null) {
     app.addCourse(name.text.trim(), m);
