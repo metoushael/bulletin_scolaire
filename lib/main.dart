@@ -7,32 +7,11 @@ import 'screens/class_screen.dart';
 import 'screens/marks_screen.dart';
 import 'screens/palmares_screen.dart';
 import 'screens/settings_screen.dart';
-import 'widgets.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await app.load();
   runApp(const BulletinApp());
-}
-
-ThemeData buildTheme() {
-  final scheme =
-      ColorScheme.fromSeed(seedColor: kNavy).copyWith(primary: kNavy);
-  final shape = RoundedRectangleBorder(borderRadius: BorderRadius.circular(3));
-  return ThemeData(
-    useMaterial3: true,
-    colorScheme: scheme,
-    scaffoldBackgroundColor: kPaper,
-    appBarTheme: const AppBarTheme(
-      backgroundColor: kNavy,
-      foregroundColor: Colors.white,
-      elevation: 0,
-    ),
-    filledButtonTheme:
-        FilledButtonThemeData(style: FilledButton.styleFrom(shape: shape)),
-    outlinedButtonTheme:
-        OutlinedButtonThemeData(style: OutlinedButton.styleFrom(shape: shape)),
-  );
 }
 
 class BulletinApp extends StatelessWidget {
@@ -43,7 +22,29 @@ class BulletinApp extends StatelessWidget {
     return MaterialApp(
       title: 'Bulletin Scolaire',
       debugShowCheckedModeBanner: false,
-      theme: buildTheme(),
+      theme: ThemeData(
+        useMaterial3: true,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: kNavy,
+          primary: kNavy,
+        ).copyWith(surface: kPaper),
+        scaffoldBackgroundColor: kPaper,
+        appBarTheme: const AppBarTheme(
+          backgroundColor: kNavy,
+          foregroundColor: Colors.white,
+          elevation: 0,
+        ),
+        filledButtonTheme: FilledButtonThemeData(
+          style: FilledButton.styleFrom(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(3)),
+          ),
+        ),
+        outlinedButtonTheme: OutlinedButtonThemeData(
+          style: OutlinedButton.styleFrom(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(3)),
+          ),
+        ),
+      ),
       locale: const Locale('fr'),
       supportedLocales: const [Locale('fr')],
       localizationsDelegates: GlobalMaterialLocalizations.delegates,
@@ -98,8 +99,7 @@ class _ShellState extends State<Shell> {
               children: [
                 Text(
                   app.info.school,
-                  style: kSerif.copyWith(
-                      fontSize: 18, fontWeight: FontWeight.bold),
+                  style: kSerif.copyWith(fontSize: 18, fontWeight: FontWeight.bold),
                 ),
                 Text(
                   'Année scolaire ${app.info.year}  ·  ${app.info.className}',
@@ -129,22 +129,26 @@ class _ShellState extends State<Shell> {
                   ],
                 )
               : pages[index],
-          bottomNavigationBar: wide
-              ? null
-              : NavigationBar(
-                  selectedIndex: index,
-                  onDestinationSelected: (i) => setState(() => index = i),
-                  destinations: [
-                    for (var i = 0; i < _labels.length; i++)
-                      NavigationDestination(
-                        icon: Icon(_icons[i]),
-                        selectedIcon: Icon(_iconsOn[i]),
-                        label: _labels[i],
-                      ),
-                  ],
-                ),
+          bottomNavigationBar:
+              wide ? null : _buildBottomNav(),
         );
       },
+    );
+  }
+
+  BottomNavigationBar _buildBottomNav() {
+    return BottomNavigationBar(
+      currentIndex: index,
+      onTap: (i) => setState(() => index = i),
+      type: BottomNavigationBarType.fixed,
+      items: [
+        for (var i = 0; i < _labels.length; i++)
+          BottomNavigationBarItem(
+            icon: Icon(_icons[i]),
+            activeIcon: Icon(_iconsOn[i]),
+            label: _labels[i],
+          ),
+      ],
     );
   }
 }

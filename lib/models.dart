@@ -2,7 +2,9 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+
+import 'database_service.dart';
+import 'models.dart';
 
 /// Multiplicateur du maxima de periode pour chacune des 9 colonnes du bulletin :
 /// 1ere P., 2eme P., Exam., Total S1, 3eme P., 4eme P., Exam., Total S2, Total general.
@@ -75,22 +77,6 @@ class ClassInfo {
         'title': title,
         'teacher': teacher,
       };
-
-  factory ClassInfo.fromJson(Map<String, dynamic> j) {
-    final d = ClassInfo();
-    String g(String k, String def) => (j[k] ?? def).toString();
-    return ClassInfo(
-      province: g('province', d.province),
-      city: g('city', d.city),
-      commune: g('commune', d.commune),
-      school: g('school', d.school),
-      code: g('code', d.code),
-      year: g('year', d.year),
-      className: g('className', d.className),
-      title: g('title', d.title),
-      teacher: g('teacher', d.teacher),
-    );
-  }
 }
 
 class Student {
@@ -115,31 +101,6 @@ class Student {
     this.idNo = '',
     this.decision = 'auto',
   });
-
-  Map<String, dynamic> toJson() => {
-        'id': id,
-        'name': name,
-        'sex': sex,
-        'birthPlace': birthPlace,
-        'birthDate': birthDate,
-        'permNo': permNo,
-        'idNo': idNo,
-        'decision': decision,
-      };
-
-  factory Student.fromJson(Map<String, dynamic> j) {
-    String g(String k, String def) => (j[k] ?? def).toString();
-    return Student(
-      id: g('id', ''),
-      name: g('name', ''),
-      sex: g('sex', ''),
-      birthPlace: g('birthPlace', ''),
-      birthDate: g('birthDate', ''),
-      permNo: g('permNo', ''),
-      idNo: g('idNo', ''),
-      decision: g('decision', 'auto'),
-    );
-  }
 }
 
 class Course {
@@ -158,22 +119,6 @@ class Course {
     this.active = true,
     this.teacher = '',
   });
-
-  Map<String, dynamic> toJson() => {
-        'id': id,
-        'name': name,
-        'max': max,
-        'active': active,
-        'teacher': teacher,
-      };
-
-  factory Course.fromJson(Map<String, dynamic> j) => Course(
-        id: (j['id'] ?? '').toString(),
-        name: (j['name'] ?? '').toString(),
-        max: ((j['max'] as num?) ?? 10).toInt(),
-        active: (j['active'] as bool?) ?? true,
-        teacher: (j['teacher'] ?? '').toString(),
-      );
 }
 
 List<Course> defaultCourses() => [
@@ -200,145 +145,218 @@ List<Course> defaultCourses() => [
       Course(id: 'francais', name: 'Français', max: 50),
     ];
 
+// ── AppState ────────────────────────────────────────────────
+
 class AppState extends ChangeNotifier {
-  static const String _key = 'bulletin_data_v1';
-
   ClassInfo info = ClassInfo();
-  List<Course> courses = defaultCourses();
+  List<Course> courses = [];
   List<Student> students = [];
-
-  /// courseId -> studentId -> [P1, P2, Ex1, P3, P4, Ex2]
-  Map<String, Map<String, List<double?>>> marks = {};
+  int revision = 0;
   String selectedCourse = 'religion';
 
-  /// Incremente a chaque restauration pour reinitialiser les champs de saisie.
-  int revision = 0;
+  // Cache local des notes : courseId -> studentId -> [P1,P2,Ex1,P3,P4,Ex2]
+  final _marksCache = <String, Map<String, List<double?>>>{};
 
   Timer? _timer;
   int _counter = 0;
 
+  /// Génère un ID unique pour un nouvel élève ou cours.
   String newId() => '${DateTime.now().microsecondsSinceEpoch}_${_counter++}';
 
+  /// Chargement initial depuis SQLite.
   Future<void> load() async {
     try {
-      final p = await SharedPreferences.getInstance();
-      final s = p.getString(_key);
-      if (s != null) importJson(s);
+      await DatabaseService.init();
+
+      // Migration depuis SharedPreferences si donnée ancienne présente
+      final migrated = await DatabaseService.importFromSharedIfNeeded();
+      if (migrated) debugPrint('Migration SharedPreferences → SQLite OK');
+
+      // Charger les données
+      await _loadAll();
     } catch (e) {
       debugPrint('Chargement impossible : $e');
     }
   }
 
-  Future<void> _persist() async {
-    try {
-      final p = await SharedPreferences.getInstance();
-      await p.setString(_key, exportJson());
-    } catch (e) {
-      debugPrint('Enregistrement impossible : $e');
+  Future<void> _loadAll() async {
+    // Info
+    final infoMap = await DatabaseService.loadClassInfo();
+    if (infoMap.isNotEmpty) {
+      info = ClassInfo(
+        province: infoMap['province'] ?? info.province,
+        city: infoMap['city'] ?? info.city,
+        commune: infoMap['commune'] ?? info.commune,
+        school: infoMap['school'] ?? info.school,
+        code: infoMap['code'] ?? info.code,
+        year: infoMap['year'] ?? info.year,
+        className: infoMap['className'] ?? info.className,
+        title: infoMap['title'] ?? info.title,
+        teacher: infoMap['teacher'] ?? info.teacher,
+      );
     }
+
+    // Courses
+    final courseRows = await DatabaseService.loadCourses();
+    if (courseRows.isEmpty) {
+      courses = defaultCourses();
+      // Sauvegarder les cours par défaut
+      for (final c in courses) {
+        await DatabaseService.saveCourse(CourseEntry(
+          id: c.id,
+          name: c.name,
+          max: c.max,
+          active: c.active,
+          teacher: c.teacher,
+        ));
+      }
+    } else {
+      courses = courseRows.map((r) => Course(
+            id: r['id'] as String,
+            name: r['name'] as String,
+            max: (r['max'] as num).toInt(),
+            active: (r['active'] as int) == 1,
+            teacher: r['teacher'] as String,
+          )).toList();
+    }
+
+    // Students
+    final stuRows = await DatabaseService.loadStudents();
+    students = stuRows.map((r) => Student(
+          id: r['id'] as String,
+          name: r['name'] as String,
+          sex: r['sex'] as String,
+          birthPlace: r['birthPlace'] as String,
+          birthDate: r['birthDate'] as String,
+          permNo: r['permNo'] as String,
+          idNo: r['idNo'] as String,
+          decision: r['decision'] as String,
+        )).toList();
+
+    // Settings
+    selectedCourse =
+        await DatabaseService.getAppSetting('selected_course', 'religion');
+    revision = await DatabaseService.getRevision();
+
+    notifyListeners();
   }
 
-  /// A appeler apres toute modification : notifie l'interface et enregistre.
+  /// Sérialisation JSON complète (pour backup/export).
+  Future<String> exportJson() async {
+    return DatabaseService.exportJson();
+  }
+
+  /// Restauration depuis un JSON (pour restore/import).
+  Future<void> importJson(String text) async {
+    await DatabaseService.importJson(text);
+    await _loadAll();
+  }
+
+  /// Persist une modification (note seule → immediate; autre → debounce).
   void changed() {
     notifyListeners();
-    _timer?.cancel();
-    _timer = Timer(const Duration(milliseconds: 500), _persist);
   }
 
-  String exportJson() => jsonEncode({
-        'version': 1,
-        'info': info.toJson(),
-        'courses': courses.map((c) => c.toJson()).toList(),
-        'students': students.map((s) => s.toJson()).toList(),
-        'marks': marks,
-        'selectedCourse': selectedCourse,
-      });
-
-  void importJson(String text) {
-    final j = jsonDecode(text) as Map<String, dynamic>;
-    final newInfo = ClassInfo.fromJson(
-        (j['info'] ?? <String, dynamic>{}) as Map<String, dynamic>);
-    var newCourses = ((j['courses'] ?? []) as List)
-        .map((e) => Course.fromJson(e as Map<String, dynamic>))
-        .toList();
-    if (newCourses.isEmpty) newCourses = defaultCourses();
-    final newStudents = ((j['students'] ?? []) as List)
-        .map((e) => Student.fromJson(e as Map<String, dynamic>))
-        .toList();
-    final newMarks = <String, Map<String, List<double?>>>{};
-    final raw = (j['marks'] ?? <String, dynamic>{}) as Map<String, dynamic>;
-    raw.forEach((cid, v) {
-      final byStudent = <String, List<double?>>{};
-      (v as Map<String, dynamic>).forEach((sid, arr) {
-        final list = (arr as List)
-            .map<double?>((x) => x == null ? null : (x as num).toDouble())
-            .toList();
-        while (list.length < 6) {
-          list.add(null);
-        }
-        byStudent[sid] = list;
-      });
-      newMarks[cid] = byStudent;
-    });
-    info = newInfo;
-    courses = newCourses;
-    students = newStudents;
-    marks = newMarks;
-    selectedCourse = (j['selectedCourse'] ?? 'religion').toString();
-    revision++;
-    notifyListeners();
+  /// Retourne une copie de la ligne en cache (null si non chargée).
+  List<double?>? getCachedRow(String courseId, String studentId) {
+    final byStudent = _marksCache[courseId];
+    return byStudent?[studentId];
   }
 
+  /// Renvoie la ligne de 6 valeurs pour un cours/élève.
   List<double?> rowOf(String courseId, String studentId) {
-    return marks[courseId]?[studentId] ?? List<double?>.filled(6, null);
+    // Vérifier le cache
+    final byStudent = _marksCache[courseId];
+    if (byStudent != null && byStudent.containsKey(studentId)) {
+      return byStudent[studentId]!;
+    }
+    // Charger depuis la DB
+    final row = DatabaseService.loadMarkRow(courseId, studentId);
+    row.then((list) {
+      _marksCache.putIfAbsent(courseId, () => {})[studentId] = list;
+    });
+    return List<double?>.filled(6, null);
   }
 
-  void setMark(String courseId, String studentId, int idx, double? v) {
-    final byStudent = marks.putIfAbsent(courseId, () => {});
-    final row =
-        byStudent.putIfAbsent(studentId, () => List<double?>.filled(6, null));
+  /// Mettre à jour une note et persist en BDD.
+  Future<void> setMark(
+      String courseId, String studentId, int idx, double? v) async {
+    // Lire la ligne actuelle
+    final byStudent = _marksCache[courseId] ?? {};
+    final row = byStudent[studentId] ?? List<double?>.filled(6, null);
+    while (row.length < 6) row.add(null);
     row[idx] = v;
+    byStudent[studentId] = row;
+    _marksCache[courseId] = byStudent;
+
+    await DatabaseService.saveMark(courseId, studentId, {idx: v});
     changed();
   }
 
+  /// Tri alphabétique des élèves.
   void sortStudents() {
-    students
-        .sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    students.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
   }
 
-  void addStudent(Student s) {
+  /// Ajouter un élève.
+  Future<void> addStudent(Student s) async {
     students.add(s);
     sortStudents();
+    await DatabaseService.saveStudent(StudentEntry(
+      id: s.id,
+      name: s.name,
+      sex: s.sex,
+      birthPlace: s.birthPlace,
+      birthDate: s.birthDate,
+      permNo: s.permNo,
+      idNo: s.idNo,
+      decision: s.decision,
+    ));
     changed();
   }
 
-  void removeStudent(Student s) {
+  /// Supprimer un élève.
+  Future<void> removeStudent(Student s) async {
     students.removeWhere((x) => x.id == s.id);
-    for (final m in marks.values) {
-      m.remove(s.id);
+    await DatabaseService.removeStudent(s.id);
+    changed();
+  }
+
+  /// Ajouter un cours.
+  Future<void> addCourse(String name, int max) async {
+    final id = newId();
+    courses.add(Course(id: id, name: name, max: max));
+    await DatabaseService.saveCourse(CourseEntry(id: id, name: name, max: max));
+    changed();
+  }
+
+  /// Supprimer un cours.
+  Future<void> removeCourse(Course c) async {
+    courses.removeWhere((x) => x.id == c.id);
+    _marksCache.remove(c.id);
+    await DatabaseService.removeCourse(c.id);
+    if (selectedCourse == c.id) {
+      selectedCourse = courses.firstOrNull?.id ?? kConduct;
     }
     changed();
   }
 
-  void addCourse(String name, int max) {
-    courses.add(Course(id: newId(), name: name, max: max));
+  /// Effacer toutes les notes (conserve élèves + cours).
+  Future<void> clearMarks() async {
+    await DatabaseService.clearMarks();
+    _marksCache.clear();
     changed();
   }
 
-  void removeCourse(Course c) {
-    courses.removeWhere((x) => x.id == c.id);
-    marks.remove(c.id);
-    changed();
-  }
-
-  void clearMarks() {
-    marks = {};
-    revision++;
+  /// Sélectionner un cours actif.
+  void selectCourse(String id) {
+    selectedCourse = id;
+    DatabaseService.setAppSetting('selected_course', id);
     changed();
   }
 }
 
-final AppState app = AppState();
+final app = AppState();
 
 class PalmaresRow {
   final Student student;
@@ -349,26 +367,20 @@ class PalmaresRow {
   PalmaresRow(this.student, this.pct, this.place, this.appr, this.obs);
 }
 
-/// Toutes les regles de calcul du bulletin (reprises du classeur Excel).
+// ── Calc (logique pure — inchangée) ─────────────────────────
+
 class Calc {
-  /// Valeur d'une colonne (0..8) pour une ligne de cotes.
   static double? col(List<double?> r, int i) {
     switch (i) {
-      case 0:
-        return r[0];
-      case 1:
-        return r[1];
-      case 2:
-        return r[2];
+      case 0: return r[0];
+      case 1: return r[1];
+      case 2: return r[2];
       case 3:
         if (r[0] == null || r[1] == null || r[2] == null) return null;
         return r[0]! + r[1]! + r[2]!;
-      case 4:
-        return r[3];
-      case 5:
-        return r[4];
-      case 6:
-        return r[5];
+      case 4: return r[3];
+      case 5: return r[4];
+      case 6: return r[5];
       case 7:
         if (r[3] == null || r[4] == null || r[5] == null) return null;
         return r[3]! + r[4]! + r[5]!;
@@ -407,7 +419,7 @@ class Calc {
     return s;
   }
 
-  /// Pourcentage tronque a une decimale (ROUNDDOWN d'Excel).
+  /// Pourcentage tronqué à une décimale (ROUNDDOWN d'Excel).
   static double pct(double tot, double max) {
     if (max <= 0) return 0;
     return (tot * 100 / max * 10 + 1e-9).floorToDouble() / 10;
@@ -438,7 +450,7 @@ class Calc {
   static double annualPct(AppState a, String sid) =>
       pct(total(a, sid, 8), maxGen(a, 8));
 
-  /// 'passe', 'double' ou '' (pas encore de donnees).
+  /// 'passe', 'double' ou '' (pas encore de données).
   static String decision(AppState a, Student s) {
     if (s.decision == 'passe' || s.decision == 'double') return s.decision;
     if (!hasData(a, s.id, 8)) return '';
@@ -459,10 +471,7 @@ class Calc {
       final p = annualPct(a, s.id);
       final d = decision(a, s);
       out.add(PalmaresRow(
-        s,
-        p,
-        place,
-        appr(p),
+        s, p, place, appr(p),
         d == 'passe' ? 'Réussite' : (d == 'double' ? 'Echec' : ''),
       ));
     }

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../models.dart';
-import '../pdf_service.dart';
 import '../widgets.dart';
 import 'pdf_screen.dart';
 
@@ -95,10 +94,12 @@ class _StudentCard extends StatelessWidget {
                 DropdownButton<String>(
                   value: s.decision,
                   items: const [
-                    DropdownMenuItem(
-                        value: 'auto', child: Text('Décision : automatique')),
-                    DropdownMenuItem(value: 'passe', child: Text('Passe')),
-                    DropdownMenuItem(value: 'double', child: Text('Double')),
+                    DropdownMenuItem(value: 'auto',
+                        child: Text('Décision : automatique')),
+                    DropdownMenuItem(value: 'passe',
+                        child: Text('Passe')),
+                    DropdownMenuItem(value: 'double',
+                        child: Text('Double')),
                   ],
                   onChanged: (v) {
                     if (v != null) {
@@ -108,12 +109,9 @@ class _StudentCard extends StatelessWidget {
                   },
                 ),
                 OutlinedButton.icon(
-                  onPressed: () => openPdf(
-                    context,
-                    s.name,
-                    'bulletin_${s.name}.pdf',
-                    () => buildBulletinsPdf(app, [s]),
-                  ),
+                  onPressed: () => openPdf(context, s.name,
+                      'bulletin_${s.name}.pdf',
+                      () => buildBulletinsPdf(app, [s])),
                   icon: const Icon(Icons.visibility_outlined, size: 18),
                   label: const Text('Aperçu / Imprimer'),
                 ),

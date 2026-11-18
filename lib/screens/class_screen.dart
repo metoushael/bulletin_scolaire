@@ -231,7 +231,7 @@ Future<void> showBulkDialog(BuildContext context) async {
       content: SizedBox(
         width: 460,
         child: Column(
-          mainAxisSize: MainAxisSize.min,
+          mainAxisSize: .min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(

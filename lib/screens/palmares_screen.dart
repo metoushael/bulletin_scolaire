@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../models.dart';
-import '../pdf_service.dart';
 import '../widgets.dart';
 import 'pdf_screen.dart';
 
@@ -16,18 +15,16 @@ class PalmaresScreen extends StatelessWidget {
 
     return PageBody(children: [
       const PageTitle('Palmarès',
-          sub: 'Classement de fin d\'année selon le total général.'),
+          sub: "Classement de fin d'année selon le total général."),
       Align(
         alignment: Alignment.centerLeft,
         child: FilledButton.icon(
           onPressed: rows.isEmpty
               ? null
-              : () => openPdf(
-                    context,
-                    'Palmarès - ${app.info.className}',
-                    'palmares_${app.info.className}.pdf',
-                    () => buildPalmaresPdf(app),
-                  ),
+              : () => openPdf(context,
+                  'Palmarès - ${app.info.className}',
+                  'palmares_${app.info.className}.pdf',
+                  () => buildPalmaresPdf(app)),
           icon: const Icon(Icons.print_outlined),
           label: const Text('Fiche de proclamation (PDF)'),
         ),
@@ -51,7 +48,8 @@ class PalmaresScreen extends StatelessWidget {
       if (rows.isEmpty)
         const Panel(
           title: 'Classement',
-          child: Text('Le classement apparaîtra dès que des cotes seront saisies.'),
+          child:
+              Text('Le classement apparaîtra dès que des cotes seront saisies.'),
         )
       else
         Container(

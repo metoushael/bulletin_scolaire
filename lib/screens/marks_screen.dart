@@ -10,7 +10,7 @@ class MarksScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final active = app.courses.where((c) => c.active).toList();
     final ids = [...active.map((c) => c.id), kConduct];
-    if (!ids.contains(app.selectedCourse)) app.selectedCourse = ids.first;
+    if (!ids.contains(app.selectedCourse)) app.selectCourse(ids.first);
     final isConduct = app.selectedCourse == kConduct;
     final course = isConduct
         ? null
@@ -36,16 +36,13 @@ class MarksScreen extends StatelessWidget {
                 value: app.selectedCourse,
                 items: [
                   for (final c in active)
-                    DropdownMenuItem(
-                        value: c.id, child: Text('${c.name}  (max. ${c.max})')),
-                  const DropdownMenuItem(
-                      value: kConduct, child: Text('Conduite  (max. 100)')),
+                    DropdownMenuItem(value: c.id,
+                        child: Text('${c.name}  (max. ${c.max})')),
+                  const DropdownMenuItem(value: kConduct,
+                      child: Text('Conduite  (max. 100)')),
                 ],
                 onChanged: (v) {
-                  if (v != null) {
-                    app.selectedCourse = v;
-                    app.changed();
-                  }
+                  if (v != null) app.selectCourse(v);
                 },
               ),
             ),
@@ -67,8 +64,7 @@ class MarksScreen extends StatelessWidget {
       if (app.students.isEmpty)
         const Panel(
           title: 'Élèves',
-          child: Text(
-              "Ajoutez d'abord les élèves dans l'onglet Classe."),
+          child: Text("Ajoutez d'abord les élèves dans l'onglet Classe."),
         )
       else
         Container(
@@ -174,8 +170,12 @@ class _MarkCellState extends State<_MarkCell> {
   @override
   void initState() {
     super.initState();
-    final v = app.rowOf(widget.courseId, widget.studentId)[widget.dataIdx];
-    c = TextEditingController(text: fmt(v));
+    // Charger la valeur depuis le cache ou directement de la BDD
+    final cachedRow = app.getCachedRow(widget.courseId, widget.studentId);
+    final val = cachedRow != null && cachedRow.length > widget.dataIdx
+        ? cachedRow[widget.dataIdx]
+        : null;
+    c = TextEditingController(text: fmt(val));
   }
 
   @override
